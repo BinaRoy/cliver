@@ -22,7 +22,7 @@ if [ "${BUILD:-0}" = "1" ]; then
 fi
 
 run_cli() {
-  # Run CLI with given run-args; stdout only (stderr kept for errors)
+  # Run CLI with given run-args; stdout only (stderr discarded)
   cjpm run --run-args="$1" 2>/dev/null
 }
 
@@ -42,16 +42,10 @@ for ref in ref:1 ref:2 ref:3; do
     exit 1
   fi
 done
-# Check order: ref:1 must appear before ref:2, ref:2 before ref:3
-pos1=$(echo "$out_multi" | grep -o -n 'ref:1' | head -1 | cut -d: -f1)
-pos2=$(echo "$out_multi" | grep -o -n 'ref:2' | head -1 | cut -d: -f1)
-pos3=$(echo "$out_multi" | grep -o -n 'ref:3' | head -1 | cut -d: -f1)
-if [ -z "$pos1" ] || [ -z "$pos2" ] || [ -z "$pos3" ]; then
-  echo "FAIL: could not find ref positions in: $out_multi"
-  exit 1
-fi
-if [ "$pos1" -ge "$pos2" ] || [ "$pos2" -ge "$pos3" ]; then
-  echo "FAIL: refs must appear in order ref:1, ref:2, ref:3 (positions $pos1 $pos2 $pos3). Got: $out_multi"
+# Check order: ref:1 must appear before ref:2, ref:2 before ref:3 (single line may include cjpm warning)
+flat=$(echo "$out_multi" | tr -d '\n')
+if ! echo "$flat" | grep -q 'ref:1.*ref:2.*ref:3'; then
+  echo "FAIL: refs must appear in order ref:1, ref:2, ref:3. Got: $out_multi"
   exit 1
 fi
 echo "PASS: multi-command returns ref:1, ref:2, ref:3 in order"

@@ -1,6 +1,7 @@
 [package]
 cjc-version = "1.0.5"
 name = "pkgcli"
+compile-option = "-Woff unused"
 description = "Cangjie package-to-CLI utility: parses package source, generates a CLI driver that exposes public functions and constructors as commands."
 version = "0.1.0"
 output-type = "executable"

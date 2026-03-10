@@ -49,17 +49,10 @@ for ref in ref:1 ref:2 ref:3 ref:4; do
     exit 1
   fi
 done
-# Check order
-pos1=$(echo "$out" | grep -o -n 'ref:1' | head -1 | cut -d: -f1)
-pos2=$(echo "$out" | grep -o -n 'ref:2' | head -1 | cut -d: -f1)
-pos3=$(echo "$out" | grep -o -n 'ref:3' | head -1 | cut -d: -f1)
-pos4=$(echo "$out" | grep -o -n 'ref:4' | head -1 | cut -d: -f1)
-if [ -z "$pos1" ] || [ -z "$pos2" ] || [ -z "$pos3" ] || [ -z "$pos4" ]; then
-  echo "FAIL: could not find all ref positions"
-  exit 1
-fi
-if [ "$pos1" -ge "$pos2" ] || [ "$pos2" -ge "$pos3" ] || [ "$pos3" -ge "$pos4" ]; then
-  echo "FAIL: refs must appear in order ref:1, ref:2, ref:3, ref:4 (positions $pos1 $pos2 $pos3 $pos4)"
+# Check order (single line may include cjpm warning)
+flat=$(echo "$out" | tr -d '\n')
+if ! echo "$flat" | grep -q 'ref:1.*ref:2.*ref:3.*ref:4'; then
+  echo "FAIL: refs must appear in order ref:1, ref:2, ref:3, ref:4"
   exit 1
 fi
 

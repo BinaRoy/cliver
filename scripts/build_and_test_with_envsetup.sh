@@ -8,12 +8,12 @@
 #   CANGJIE_ENVSETUP=/path/to/envsetup.sh ./scripts/build_and_test_with_envsetup.sh
 #
 # Default envsetup (if CANGJIE_ENVSETUP is not set):
-#   /Users/danghica/sandbox/cjceh/cjc-eh/cangjie/envsetup.sh
+#   /Users/danghica/cangjie/envsetup.sh
 
 set -e
 cd "$(dirname "$0")/.."
 
-CANGJIE_ENVSETUP="${CANGJIE_ENVSETUP:-/Users/danghica/sandbox/cjceh/cjc-eh/cangjie/envsetup.sh}"
+CANGJIE_ENVSETUP="${CANGJIE_ENVSETUP:-/Users/danghica/cangjie/envsetup.sh}"
 
 if [ ! -f "${CANGJIE_ENVSETUP}" ]; then
   echo "Error: envsetup not found: ${CANGJIE_ENVSETUP}"
@@ -37,5 +37,9 @@ fi
 echo "Using cjpm: $(which cjpm)"
 echo "Using cjc: $(which cjc)"
 echo ""
+
+# Remove cjpm dependency cache so a new scan matches this toolchain (avoids DataModelException
+# when cache was produced by a different cjc/cjpm version).
+rm -f target/.dep-cache sample_cangjie_package/target/.dep-cache 2>/dev/null || true
 
 ./scripts/build_and_test.sh

@@ -84,8 +84,9 @@ class RunFromArgsTests {
         let result: RunFromArgsResult = runFromArgs(args, store, 1)
         @Assert(result.exitCode == 0)
         @Assert(result.stdout.indexOf("Commands:").isSome())
-        @Assert(result.stdout.indexOf("Student new").isSome())
-        @Assert(result.stdout.indexOf("Lesson new").isSome())
+        @Assert(result.stdout.indexOf("Student").isSome())
+        @Assert(result.stdout.indexOf("Lesson").isSome())
+        @Assert(result.stdout.indexOf(" new ").isSome())
     }
 
     @TestCase

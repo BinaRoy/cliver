@@ -97,4 +97,16 @@ cjc -p /Users/danghica/cliver/src --scan-dependency > /tmp/cliver-scan.json 2>/d
 python3 -c "import json; d=json.load(open('/tmp/cliver-scan.json')); print('Keys:', list(d.keys())); print('std-dependencies type:', type(d['std-dependencies'])); print('First std-dep:', d['std-dependencies'][0])"
 ```
 
-This saves the exact JSON cjpm receives and prints the structure of `std-dependencies` for comparison with cjpm’s expected format.
+This saves the exact JSON cjpm receives and prints the structure of `std-dependencies` for comparison with cjpm's expected format.
+
+## 6. Stale dependency cache (DataModelException)
+
+If you see **`DataModelException: This data is not DataModelString`** in `FullName::deserialize` when running `cjpm build`, cjpm is reading a **dependency cache** (e.g. `target/.dep-cache`) that was produced by a different cjc/cjpm version. The cache format is not compatible.
+
+**Fix:** Remove the cache so cjpm re-scans with the current toolchain:
+
+```bash
+rm -f target/.dep-cache sample_cangjie_package/target/.dep-cache
+```
+
+The script `build_and_test_with_envsetup.sh` clears these before building so the correct envsetup is used and no stale cache is loaded.

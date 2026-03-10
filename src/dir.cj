@@ -27,7 +27,6 @@ func _collectCjFilesRec(scanDir: String, currentDir: String): ArrayList<Path> {
         var i: Int64 = 0
         while (i < entries.size) {
             let entry: FileInfo = entries[i]
-            let path: Path = entry.path
             let name: String = entry.name
             if (entry.isDirectory()) {
                 if (name != "." && name != "..") {
@@ -41,8 +40,7 @@ func _collectCjFilesRec(scanDir: String, currentDir: String): ArrayList<Path> {
                 }
             } else {
                 if (name.endsWith(".cj") && name != "cli_driver.cj") {
-                    let fullPath: Path = Path(currentDir + "/" + name)
-                    result.add(all: [fullPath])
+                    result.add(all: [entry.path])
                 }
             }
             i++

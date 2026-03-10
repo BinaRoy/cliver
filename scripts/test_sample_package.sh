@@ -24,7 +24,8 @@ if [ "${BUILD_CLIVE:-0}" = "1" ]; then
 fi
 
 echo "=== Generating driver for sample_cangjie_package ==="
-cjpm run --run-args="--pkg sample_cangjie_package"
+SAMPLE_PKG_PATH="${CLIVE_ROOT}/sample_cangjie_package"
+cjpm run --run-args="--pkg ${SAMPLE_PKG_PATH}"
 
 echo "=== Building sample_cangjie_package ==="
 cd sample_cangjie_package

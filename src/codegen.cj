@@ -26,7 +26,16 @@ public func generateDriver(manifest: Manifest): String {
     sb.append("import std.env.*\n")
     sb.append("import std.collection.*\n")
     sb.append("import std.convert.*\n")
-    sb.append("import std.core.StringBuilder\n\n")
+    sb.append("import std.core.StringBuilder\n")
+    var subImports: ArrayList<String> = _collectSubpackageImports(manifest, pkg)
+    var si: Int64 = 0
+    while (si < subImports.size) {
+        sb.append("import ")
+        sb.append(subImports.get(si).getOrThrow())
+        sb.append(".*\n")
+        si++
+    }
+    sb.append("\n")
 
     // Session state for runFromArgs (per-session store + nextId)
     sb.append("class _SessionState {\n")
@@ -678,7 +687,8 @@ public func generateDriver(manifest: Manifest): String {
     while (k < keys.size) {
         let key: String = keys.get(k).getOrThrow()
         let overloads: ArrayList<CommandInfo> = overloadsList.get(k).getOrThrow()
-        _emitRunCommand(sb, key, overloads)
+        let pkgPath: String = commandPackagePaths.get(k).getOrThrow()
+        _emitRunCommand(sb, key, overloads, pkg, pkgPath)
         k++
     }
     // Emit _runClassName_methodName for each class method
@@ -687,7 +697,8 @@ public func generateDriver(manifest: Manifest): String {
         let cmClass: String = classMethodClassNames.get(cmIdx).getOrThrow()
         let cmMethod: String = classMethodNames.get(cmIdx).getOrThrow()
         let cmOverloads: ArrayList<CommandInfo> = classMethodOverloadsList.get(cmIdx).getOrThrow()
-        _emitRunCommand(sb, cmClass + "_" + cmMethod, cmOverloads)
+        let cmPkgPath: String = cmPackagePaths.get(cmIdx).getOrThrow()
+        _emitRunCommand(sb, cmClass + "_" + cmMethod, cmOverloads, pkg, cmPkgPath)
         cmIdx++
     }
 
@@ -839,6 +850,27 @@ func _emitPathHelpers(sb: StringBuilder, knownPaths: ArrayList<String>): Unit {
     sb.append("}\n\n")
 }
 
+// Collect unique subpackage import names (pkg.subpath) for commands not at root.
+func _collectSubpackageImports(manifest: Manifest, pkg: String): ArrayList<String> {
+    let result: ArrayList<String> = ArrayList<String>()
+    var ci: Int64 = 0
+    while (ci < manifest.commands.size) {
+        let path: String = manifest.commands.get(ci).getOrThrow().packagePath
+        if (path != "/" && path.size > 0) {
+            let imp: String = pkg + "." + _pathToDotSuffix(path)
+            var found: Bool = false
+            var r: Int64 = 0
+            while (r < result.size) {
+                if (result.get(r).getOrThrow() == imp) { found = true; break }
+                r++
+            }
+            if (!found) { result.add(all: [imp]) }
+        }
+        ci++
+    }
+    result
+}
+
 func _buildKnownPaths(manifest: Manifest): ArrayList<String> {
     let result: ArrayList<String> = ArrayList<String>()
     result.add(all: ["/"])
@@ -871,7 +903,19 @@ func _appendSafeName(sb: StringBuilder, name: String): Unit {
     }
 }
 
-func _emitRunCommand(sb: StringBuilder, key: String, overloads: ArrayList<CommandInfo>): Unit {
+// Convert CLI path (e.g. "demo_sub" or "a/b/c") to Cangjie qualifier suffix (e.g. "demo_sub" or "a.b.c").
+func _pathToDotSuffix(pathStr: String): String {
+    let sb: StringBuilder = StringBuilder()
+    var i: Int64 = 0
+    while (i < pathStr.size) {
+        let c: Byte = pathStr.get(i).getOrThrow()
+        if (Int64(c) == 47) { sb.append(Rune(UInt32(46))) } else { sb.append(Rune(UInt32(c))) }
+        i++
+    }
+    sb.toString()
+}
+
+func _emitRunCommand(sb: StringBuilder, key: String, overloads: ArrayList<CommandInfo>, pkgQualifiedName: String, packagePath: String): Unit {
     sb.append("func _run")
     _appendSafeName(sb, key)
     sb.append("(args: ArrayList<String>): Int64 {\n")
@@ -888,11 +932,12 @@ func _emitRunCommand(sb: StringBuilder, key: String, overloads: ArrayList<Comman
         sb.append("    for (idx in 1..args.size) { actualArgs.add(all: [args.get(idx).getOrThrow()]) }\n")
     }
 
+    let qualifier: String = if (packagePath == "/") { "" } else { pkgQualifiedName + "." + _pathToDotSuffix(packagePath) + "." }
     var ov: Int64 = 0
     while (ov < overloads.size) {
         let cmd: CommandInfo = overloads.get(ov).getOrThrow()
         let argsVar: String = if (needNew) { "actualArgs" } else { "args" }
-        _emitOverload(sb, cmd, argsVar, needNew)
+        _emitOverload(sb, cmd, argsVar, needNew, qualifier)
         ov++
     }
 
@@ -905,21 +950,21 @@ func _emitRunCommand(sb: StringBuilder, key: String, overloads: ArrayList<Comman
     sb.append("}\n\n")
 }
 
-func _emitOverload(sb: StringBuilder, cmd: CommandInfo, argsVar: String, isConstructor: Bool): Unit {
+func _emitOverload(sb: StringBuilder, cmd: CommandInfo, argsVar: String, isConstructor: Bool, qualifier: String): Unit {
     let n: Int64 = cmd.params.size
     sb.append("    if (")
     sb.append(argsVar)
     sb.append(".size >= ")
     sb.append(n)
     sb.append(") {\n")
-    _emitConvertAndCall(sb, cmd, argsVar, isConstructor, 0, n, "        ")
+    _emitConvertAndCall(sb, cmd, argsVar, isConstructor, 0, n, "        ", qualifier)
     sb.append("    }\n")
 }
 
-func _emitConvertAndCall(sb: StringBuilder, cmd: CommandInfo, argsVar: String, isConstructor: Bool, index: Int64, n: Int64, indent: String): Unit {
+func _emitConvertAndCall(sb: StringBuilder, cmd: CommandInfo, argsVar: String, isConstructor: Bool, index: Int64, n: Int64, indent: String, qualifier: String): Unit {
     if (index >= n) {
         sb.append(indent)
-        _emitCall(sb, cmd, isConstructor, n)
+        _emitCall(sb, cmd, isConstructor, n, qualifier)
         sb.append("\n")
         return
     }
@@ -931,7 +976,7 @@ func _emitConvertAndCall(sb: StringBuilder, cmd: CommandInfo, argsVar: String, i
     sb.append("if (")
     sb.append(convVar)
     sb.append(".isSome()) {\n")
-    _emitConvertAndCall(sb, cmd, argsVar, isConstructor, index + 1, n, indent + "    ")
+    _emitConvertAndCall(sb, cmd, argsVar, isConstructor, index + 1, n, indent + "    ", qualifier)
     sb.append(indent)
     sb.append("}\n")
 }
@@ -1020,7 +1065,8 @@ func _appendConvertedType(sb: StringBuilder, paramType: String): Unit {
     }
 }
 
-func _emitCall(sb: StringBuilder, cmd: CommandInfo, isConstructor: Bool, n: Int64): Unit {
+func _emitCall(sb: StringBuilder, cmd: CommandInfo, isConstructor: Bool, n: Int64, qualifier: String): Unit {
+    // Subpackage commands: driver imports subpackages, so we emit unqualified name (no qualifier).
     let needResult: Bool = cmd.returnIsRef || (cmd.returnType != "Unit")
     if (isConstructor) {
         if (needResult) { sb.append("let _result = ") }
