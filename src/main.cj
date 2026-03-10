@@ -177,5 +177,15 @@ main(): Int64 {
     } catch (_) {
         eprintln("Note: could not write " + backendPath.toString() + " (create web/ if needed)")
     }
+    try {
+        let indexBytes: Array<Byte> = File.readFrom(Path("sample_cangjie_package/web/index.html"))
+        let indexContent: String = String.fromUtf8(indexBytes)
+        var indexFile: File = File(Path(pkgPath + "/web/index.html"), Write)
+        indexFile.write(indexContent.toArray())
+        indexFile.close()
+        println("Wrote " + pkgPath + "/web/index.html")
+    } catch (_) {
+        eprintln("Note: could not write index.html (run from Clive repo so sample_cangjie_package/web/index.html is available)")
+    }
     return 0
 }

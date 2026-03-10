@@ -13,7 +13,7 @@ import std.core.StringBuilder
 // the generated file is intended to be placed in that package's src/ (same module, no import of package).
 public func generateDriver(manifest: Manifest): String {
     let sb: StringBuilder = StringBuilder()
-    let pkg: String = manifest.packageQualifiedName
+    let pkg: String = _stripNewlines(manifest.packageQualifiedName)
 
     // Prologue: no import of target package (driver lives in same package)
     sb.append("// Generated CLI driver for package ")
@@ -27,11 +27,19 @@ public func generateDriver(manifest: Manifest): String {
     sb.append("import std.collection.*\n")
     sb.append("import std.convert.*\n")
     sb.append("import std.core.StringBuilder\n")
+    var parentImports: ArrayList<String> = _collectParentSubpackageImports(manifest, pkg)
+    var pi: Int64 = 0
+    while (pi < parentImports.size) {
+        sb.append("import ")
+        sb.append(_stripNewlines(parentImports.get(pi).getOrThrow()))
+        sb.append("\n")
+        pi++
+    }
     var subImports: ArrayList<String> = _collectSubpackageImports(manifest, pkg)
     var si: Int64 = 0
     while (si < subImports.size) {
         sb.append("import ")
-        sb.append(subImports.get(si).getOrThrow())
+        sb.append(_stripNewlines(subImports.get(si).getOrThrow()))
         sb.append(".*\n")
         si++
     }
@@ -756,6 +764,62 @@ func _emitPathHelpers(sb: StringBuilder, knownPaths: ArrayList<String>): Unit {
     sb.append("}\n\n")
 }
 
+// Remove newline and carriage return so import lines stay on one line.
+func _stripNewlines(s: String): String {
+    let sb: StringBuilder = StringBuilder()
+    var i: Int64 = 0
+    while (i < s.size) {
+        let c: Byte = s.get(i).getOrThrow()
+        let code: Int64 = Int64(c)
+        if (code != 10 && code != 13) { sb.append(Rune(UInt32(c))) }
+        i++
+    }
+    sb.toString()
+}
+
+// First path segment (e.g. "blas" from "blas/blas32") so parent import puts name in scope.
+func _firstPathSegment(pathNoLeadingSlash: String): String {
+    var i: Int64 = 0
+    while (i < pathNoLeadingSlash.size) {
+        if (Int64(pathNoLeadingSlash.get(i).getOrThrow()) == 47) {
+            let sb: StringBuilder = StringBuilder()
+            var j: Int64 = 0
+            while (j < i) {
+                sb.append(Rune(UInt32(pathNoLeadingSlash.get(j).getOrThrow())))
+                j++
+            }
+            return sb.toString()
+        }
+        i++
+    }
+    pathNoLeadingSlash
+}
+
+// Collect unique parent subpackage imports (e.g. cjnum.blas) so "blas" is in scope for blas.blas32.Band.
+func _collectParentSubpackageImports(manifest: Manifest, pkg: String): ArrayList<String> {
+    let result: ArrayList<String> = ArrayList<String>()
+    var ci: Int64 = 0
+    while (ci < manifest.commands.size) {
+        let path: String = manifest.commands.get(ci).getOrThrow().packagePath
+        if (path != "/" && path.size > 0) {
+            let noLead: String = if (path.startsWith("/")) { path.removePrefix("/") } else { path }
+            if (noLead.size > 0) {
+                let first: String = _firstPathSegment(noLead)
+                let imp: String = _stripNewlines(pkg + "." + first)
+                var found: Bool = false
+                var r: Int64 = 0
+                while (r < result.size) {
+                    if (result.get(r).getOrThrow() == imp) { found = true; break }
+                    r++
+                }
+                if (!found) { result.add(all: [imp]) }
+            }
+        }
+        ci++
+    }
+    result
+}
+
 // Collect unique subpackage import names (pkg.subpath) for commands not at root.
 func _collectSubpackageImports(manifest: Manifest, pkg: String): ArrayList<String> {
     let result: ArrayList<String> = ArrayList<String>()
@@ -763,7 +827,8 @@ func _collectSubpackageImports(manifest: Manifest, pkg: String): ArrayList<Strin
     while (ci < manifest.commands.size) {
         let path: String = manifest.commands.get(ci).getOrThrow().packagePath
         if (path != "/" && path.size > 0) {
-            let imp: String = pkg + "." + _pathToDotSuffix(path)
+            let pathNorm: String = if (path.startsWith("/")) { path.removePrefix("/") } else { path }
+            let imp: String = _stripNewlines(pkg + "." + _pathToDotSuffix(pathNorm))
             var found: Bool = false
             var r: Int64 = 0
             while (r < result.size) {
@@ -847,7 +912,9 @@ func _emitRunCommand(sb: StringBuilder, runFuncName: String, displayKey: String,
         sb.append("    for (idx in 1..args.size) { actualArgs.add(all: [args.get(idx).getOrThrow()]) }\n")
     }
 
-    let qualifier: String = if (packagePath == "/") { "" } else { pkgQualifiedName + "." + _pathToDotSuffix(packagePath) + "." }
+    // Use relative qualifier (e.g. blas.blas32.) for types so the first segment is a subpackage in scope (import cjnum.blas); full pkg.subpkg.T in type position causes "undeclared type name 'pkg'" in Cangjie.
+    let pathSuffix: String = _pathToDotSuffix(if (packagePath.startsWith("/")) { packagePath.removePrefix("/") } else { packagePath })
+    let qualifier: String = if (packagePath == "/" || pathSuffix.size == 0) { "" } else { _stripNewlines(pathSuffix + ".") }
     var ov: Int64 = 0
     while (ov < overloads.size) {
         let cmd: CommandInfo = overloads.get(ov).getOrThrow()
@@ -886,7 +953,7 @@ func _emitConvertAndCall(sb: StringBuilder, cmd: CommandInfo, argsVar: String, i
     let p: ParamInfo = cmd.params.get(index).getOrThrow()
     let convVar: String = "_v" + index.toString()
     let argExpr: String = argsVar + ".get(" + index.toString() + ").getOrThrow()"
-    _emitConvert(sb, p.paramType, argExpr, convVar, indent)
+    _emitConvert(sb, p.paramType, argExpr, convVar, indent, qualifier)
     sb.append(indent)
     sb.append("if (")
     sb.append(convVar)
@@ -896,12 +963,12 @@ func _emitConvertAndCall(sb: StringBuilder, cmd: CommandInfo, argsVar: String, i
     sb.append("}\n")
 }
 
-func _emitConvert(sb: StringBuilder, paramType: String, argExpr: String, resultVar: String, indent: String): Unit {
+func _emitConvert(sb: StringBuilder, paramType: String, argExpr: String, resultVar: String, indent: String, qualifier: String): Unit {
     sb.append(indent)
     sb.append("let ")
     sb.append(resultVar)
     sb.append(": ")
-    _appendConvertedType(sb, paramType)
+    _appendConvertedType(sb, paramType, qualifier)
     sb.append(" = ")
     if (paramType == "Int64") {
         sb.append("Int64.tryParse(")
@@ -947,45 +1014,71 @@ func _emitConvert(sb: StringBuilder, paramType: String, argExpr: String, resultV
             sb.append(argExpr)
             sb.append(")))")
         } else {
+            let qInner: String = _qualifyType(inner, qualifier)
             sb.append("Option<Option<")
-            sb.append(inner)
+            sb.append(qInner)
             sb.append(">>.None")
         }
         sb.append(")")
     } else {
-        // Class type: ref:id lookup and cast
+        // Class type: ref:id lookup and cast (qualified to resolve ambiguity when same name in multiple subpackages)
+        let qType: String = _qualifyType(paramType, qualifier)
         sb.append("(match (_parseRefId(")
         sb.append(argExpr)
         sb.append(")) { case Option<Int64>.Some(id) => match (_getRef(id)) { case Option<Any>.Some(o) => o as ")
-        sb.append(paramType)
+        sb.append(qType)
         sb.append(" ; case _ => Option<")
-        sb.append(paramType)
+        sb.append(qType)
         sb.append(">.None } ; case _ => Option<")
-        sb.append(paramType)
+        sb.append(qType)
         sb.append(">.None })")
     }
     sb.append("\n")
 }
 
-func _appendConvertedType(sb: StringBuilder, paramType: String): Unit {
+// Cangjie type names that are keywords and must be escaped when used in qualified names (e.g. `UInt64`, `Float32`, `Rune`).
+func _escapeTypeKeyword(typeName: String): String {
+    if (typeName == "UInt64" || typeName == "UInt32" || typeName == "Int32" || typeName == "Unit"
+        || typeName == "Float32" || typeName == "Float16" || typeName == "Int8" || typeName == "UInt8"
+        || typeName == "Rune") { "`" + typeName + "`" }
+    else { typeName }
+}
+
+// Qualify type with package prefix when qualifier is non-empty, so ambiguous names (e.g. Band in multiple subpackages) are resolved.
+// Do not qualify function types (e.g. (Float64) -> Bool) or primitives; escape type keywords in qualified names.
+func _qualifyType(paramType: String, qualifier: String): String {
+    if (qualifier.size == 0) { paramType }
+    else if (paramType.contains("->")) { paramType }
+    else if (paramType == "Int64" || paramType == "Float64" || paramType == "Bool" || paramType == "String") { paramType }
+    else if (paramType.startsWith("Option<")) {
+        let inner: String = paramType.removePrefix("Option<").removeSuffix(">")
+        if (inner == "Int64" || inner == "Float64" || inner == "Bool" || inner == "String") { paramType }
+        else if (inner.contains("->")) { paramType }
+        else { "Option<" + qualifier + _escapeTypeKeyword(inner) + ">" }
+    } else { qualifier + _escapeTypeKeyword(paramType) }
+}
+
+func _appendConvertedType(sb: StringBuilder, paramType: String, qualifier: String): Unit {
+    let q: String = _qualifyType(paramType, qualifier)
     if (paramType.startsWith("Option<")) {
         let inner: String = paramType.removePrefix("Option<").removeSuffix(">")
+        let qInner: String = _qualifyType(inner, qualifier)
         sb.append("Option<Option<")
-        sb.append(inner)
+        sb.append(qInner)
         sb.append(">>")
     } else {
         sb.append("Option<")
-        sb.append(paramType)
+        sb.append(q)
         sb.append(">")
     }
 }
 
 func _emitCall(sb: StringBuilder, cmd: CommandInfo, isConstructor: Bool, n: Int64, qualifier: String): Unit {
-    // Subpackage commands: driver imports subpackages, so we emit unqualified name (no qualifier).
+    let qClass: String = _qualifyType(cmd.className, qualifier)
     let needResult: Bool = cmd.returnIsRef || (cmd.returnType != "Unit")
     if (isConstructor) {
         if (needResult) { sb.append("let _result = ") }
-        sb.append(cmd.className)
+        sb.append(qClass)
         sb.append("(")
         var first: Bool = true
         var pi: Int64 = 0
@@ -1001,7 +1094,7 @@ func _emitCall(sb: StringBuilder, cmd: CommandInfo, isConstructor: Bool, n: Int6
     } else if (cmd.isInstanceMethod) {
         if (needResult) { sb.append("let _result = ") }
         sb.append("((_v0.getOrThrow() as ")
-        sb.append(cmd.className)
+        sb.append(qClass)
         sb.append(").getOrThrow()).")
         sb.append(cmd.name)
         sb.append("(")
@@ -1018,7 +1111,7 @@ func _emitCall(sb: StringBuilder, cmd: CommandInfo, isConstructor: Bool, n: Int6
         sb.append(")\n            ")
     } else if (cmd.isStaticMethod) {
         if (needResult) { sb.append("let _result = ") }
-        sb.append(cmd.className)
+        sb.append(qClass)
         sb.append(".")
         sb.append(cmd.name)
         sb.append("(")
