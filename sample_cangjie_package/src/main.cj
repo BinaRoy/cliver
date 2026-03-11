@@ -5,6 +5,10 @@
  */
 package lesson_demo
 
+// Pull in nested subpackage so cjpm links multi-level lib (like deepnames: demo_sub/nested).
+import lesson_demo.demo_sub.nested.demo as _nestedDemoRef
+func _linkNested(): Unit { _nestedDemoRef() }
+
 // ---------------------------------------------------------------------------
 // Student: name (String), id (Int64); getters and setters
 // ---------------------------------------------------------------------------
