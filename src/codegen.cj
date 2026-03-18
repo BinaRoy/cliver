@@ -47,10 +47,13 @@ public func generateDriver(manifest: Manifest): String {
         let pathSuf: String = _splitBarBefore(entry)
         let symName: String = _splitBarAfter(entry)
         if (symName.size > 0) {
-            let pathDot: String = _pathToDotSuffix(pathSuf)
+            // Use canonical path (where type is actually defined) for the import source,
+            // but keep pathSuf for the alias so dispatch code references remain correct.
+            let canonicalPath: String = _canonicalPathForType(symName, manifest, pathSuf)
+            let importPathDot: String = _pathToDotSuffix(canonicalPath)
             let alias: String = _subpackageSymbolAlias(pathSuf, symName)
             sb.append("import ")
-            sb.append(_stripNewlines(pkg + "." + pathDot + "." + symName))
+            sb.append(_stripNewlines(pkg + "." + importPathDot + "." + symName))
             sb.append(" as ")
             sb.append(alias)
             sb.append("\n")
@@ -791,6 +794,18 @@ func _stripNewlines(s: String): String {
     sb.toString()
 }
 
+// Remove all space characters so "Option < T >" → "Option<T>".
+func _removeSpaces(s: String): String {
+    let sb: StringBuilder = StringBuilder()
+    var i: Int64 = 0
+    while (i < s.size) {
+        let c: Byte = s.get(i).getOrThrow()
+        if (Int64(c) != 32) { sb.append(Rune(UInt32(c))) }
+        i++
+    }
+    sb.toString()
+}
+
 // First path segment (e.g. "blas" from "blas/blas32") so parent import puts name in scope.
 func _firstPathSegment(pathNoLeadingSlash: String): String {
     var i: Int64 = 0
@@ -858,6 +873,9 @@ func _collectSubpackageImports(manifest: Manifest, pkg: String): ArrayList<Strin
 
 func _isPrimitiveOrFunctionType(typeName: String): Bool {
     if (typeName == "Int64" || typeName == "Float64" || typeName == "Bool" || typeName == "String" || typeName == "Unit") { true }
+    else if (typeName == "UInt64" || typeName == "UInt32" || typeName == "Int32" || typeName == "Int8" || typeName == "UInt8") { true }
+    else if (typeName == "Int16" || typeName == "UInt16" || typeName == "Float32" || typeName == "Char" || typeName == "Byte") { true }
+    else if (typeName == "Any" || typeName == "Nothing" || typeName == "Rune" || typeName == "StringBuilder") { true }
     else if (typeName.contains("->")) { true }
     else { false }
 }
@@ -894,7 +912,15 @@ func _collectSubpackageAliasedSymbols(manifest: Manifest): ArrayList<String> {
         var ti: Int64 = 0
         while (ti < typesToAdd.size) {
             var typeName: String = typesToAdd.get(ti).getOrThrow()
+            // Strip optional prefix ("?T" → "T")
+            if (typeName.startsWith("?")) { typeName = typeName.removePrefix("?") }
+            // Normalize spaces so "Option < T >" → "Option<T>"
+            typeName = _removeSpaces(typeName)
+            // Unwrap Option<T> → T
             if (typeName.startsWith("Option<")) { typeName = typeName.removePrefix("Option<").removeSuffix(">") }
+            // Skip generic instantiations (can't import T<U> directly)
+            if (typeName.contains("<") || typeName.contains(">")) { ti++; continue }
+            if (typeName.size == 0) { ti++; continue }
             if (_isPrimitiveOrFunctionType(typeName)) { ti++; continue }
             let entry: String = pathSuffix + "|" + typeName
             var found: Bool = false
@@ -1000,6 +1026,21 @@ func _safeIdSegment(s: String): String {
 // Deterministic alias for a subpackage symbol (function or type); used for "import pkg.path.symbol as alias".
 func _subpackageSymbolAlias(pathSuffix: String, symbolName: String): String {
     "_cli_" + _safeIdSegment(pathSuffix) + "_" + _safeIdSegment(symbolName)
+}
+
+// Find the subpackage path where typeName is actually defined (appears as cmd.className).
+// Returns defaultPath if the type is not found as a className in any command.
+func _canonicalPathForType(typeName: String, manifest: Manifest, defaultPath: String): String {
+    var i: Int64 = 0
+    while (i < manifest.commands.size) {
+        let cmd: CommandInfo = manifest.commands.get(i).getOrThrow()
+        if (cmd.className == typeName && cmd.packagePath.size > 0 && cmd.packagePath != "/") {
+            let pathNorm: String = if (cmd.packagePath.startsWith("/")) { cmd.packagePath.removePrefix("/") } else { cmd.packagePath }
+            if (pathNorm.size > 0) { return pathNorm }
+        }
+        i++
+    }
+    defaultPath
 }
 
 // Convert CLI path (e.g. "demo_sub" or "a/b/c") to Cangjie qualifier suffix (e.g. "demo_sub" or "a.b.c").
@@ -1171,10 +1212,10 @@ func _escapeTypeKeyword(typeName: String): String {
 func _qualifyType(paramType: String, qualifier: String): String {
     if (qualifier.size == 0) { paramType }
     else if (paramType.contains("->")) { paramType }
-    else if (paramType == "Int64" || paramType == "Float64" || paramType == "Bool" || paramType == "String") { paramType }
+    else if (_isPrimitiveOrFunctionType(paramType)) { paramType }
     else if (paramType.startsWith("Option<")) {
         let inner: String = paramType.removePrefix("Option<").removeSuffix(">")
-        if (inner == "Int64" || inner == "Float64" || inner == "Bool" || inner == "String") { paramType }
+        if (_isPrimitiveOrFunctionType(inner)) { paramType }
         else if (inner.contains("->")) { paramType }
         else { "Option<" + _subpackageSymbolAlias(qualifier.removeSuffix("."), inner) + ">" }
     } else { _subpackageSymbolAlias(qualifier.removeSuffix("."), paramType) }
