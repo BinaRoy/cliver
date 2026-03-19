@@ -349,8 +349,9 @@
       promise.then(function (resp) {
         uploadsProg.style.display = 'none';
         if (resp.type === 'upload_result') {
-          addUploadedItem(file.name, resp.path);
-          appendEvent('✓ Uploaded ' + file.name + ' → ' + resp.path);
+          addUploadedItem(file.name, resp.path, resp.handle);
+          var ref = resp.handle ? '$' + resp.handle : resp.path;
+          appendEvent('✓ Uploaded ' + file.name + ' → ' + ref + ' (' + resp.path + ')');
         } else {
           appendEvent('✗ Upload failed: ' + (resp.message || 'unknown error'));
         }
@@ -359,7 +360,7 @@
     reader.readAsDataURL(file);
   }
 
-  function addUploadedItem(fname, fpath) {
+  function addUploadedItem(fname, fpath, handle) {
     var ph = uploadsList.querySelector('.empty');
     if (ph) ph.remove();
 
@@ -369,29 +370,32 @@
     fnDiv.textContent = fname; item.appendChild(fnDiv);
 
     var fpDiv = document.createElement('div'); fpDiv.className = 'fpath';
-    fpDiv.textContent = fpath; item.appendChild(fpDiv);
+    fpDiv.textContent = handle ? '$' + handle : fpath; item.appendChild(fpDiv);
 
     var actions = document.createElement('div'); actions.className = 'item-actions';
 
+    var insertRef = handle ? '$' + handle : fpath;
+
     var copyBtn = document.createElement('button'); copyBtn.className = 'btn-sm';
-    copyBtn.textContent = 'Copy path';
+    copyBtn.textContent = 'Copy';
+    copyBtn.title = 'Copy ' + insertRef;
     copyBtn.onclick = function () {
-      navigator.clipboard.writeText(fpath).then(function () {
+      navigator.clipboard.writeText(insertRef).then(function () {
         copyBtn.textContent = 'Copied!';
-        setTimeout(function () { copyBtn.textContent = 'Copy path'; }, 1500);
+        setTimeout(function () { copyBtn.textContent = 'Copy'; }, 1500);
       });
     };
     actions.appendChild(copyBtn);
 
     var insertBtn = document.createElement('button'); insertBtn.className = 'btn-sm primary';
-    insertBtn.textContent = 'Insert path';
-    insertBtn.title = 'Paste path at cursor in command input';
+    insertBtn.textContent = 'Insert';
+    insertBtn.title = 'Insert ' + insertRef + ' at cursor';
     insertBtn.onclick = function () {
       var cur = inputEl.value;
       var sel = inputEl.selectionStart || cur.length;
-      inputEl.value = cur.slice(0, sel) + fpath + cur.slice(sel);
+      inputEl.value = cur.slice(0, sel) + insertRef + cur.slice(sel);
       inputEl.focus();
-      inputEl.setSelectionRange(sel + fpath.length, sel + fpath.length);
+      inputEl.setSelectionRange(sel + insertRef.length, sel + insertRef.length);
     };
     actions.appendChild(insertBtn);
 

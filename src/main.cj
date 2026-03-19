@@ -53,6 +53,20 @@ func _backendScriptTemplate(): String {
         "  } catch (_) {}\n" +
         "}\n" +
         "function unescapeLine(s) { return (s && s.replace) ? s.replace(/ <NL> /g, \"\\n\") : s; }\n" +
+        "function deriveHandle(filename, handles) {\n" +
+        "  var base = path.basename(filename, path.extname(filename))\n" +
+        "    .toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'FILE';\n" +
+        "  if (handles[base] === undefined) return base;\n" +
+        "  var n = 2;\n" +
+        "  while (handles[base + '_' + n] !== undefined) n++;\n" +
+        "  return base + '_' + n;\n" +
+        "}\n" +
+        "function substituteHandles(line, handles) {\n" +
+        "  return line.replace(/\\$([A-Za-z_][A-Za-z0-9_]*)/g, function(_, name) {\n" +
+        "    return handles[name] !== undefined ? handles[name] : '$' + name;\n" +
+        "  });\n" +
+        "}\n" +
+        "const connHandles = new WeakMap();\n" +
         "function handleUpload(ws, msg) {\n" +
         "  try {\n" +
         "    if (typeof msg.filename !== 'string' || typeof msg.data !== 'string') {\n" +
@@ -64,8 +78,11 @@ func _backendScriptTemplate(): String {
         "    var uid = Date.now() + '_' + Math.random().toString(36).slice(2);\n" +
         "    var filePath = path.join(uploadDir, uid + '_' + sanitized);\n" +
         "    fs.writeFileSync(filePath, Buffer.from(msg.data, 'base64'));\n" +
-        "    logEntry({ type: 'upload', path: filePath });\n" +
-        "    ws.send(JSON.stringify({ type: 'upload_result', path: filePath }));\n" +
+        "    var handles = connHandles.get(ws) || {};\n" +
+        "    var handle = deriveHandle(msg.filename, handles);\n" +
+        "    handles[handle] = filePath;\n" +
+        "    logEntry({ type: 'upload', path: filePath, handle: handle });\n" +
+        "    ws.send(JSON.stringify({ type: 'upload_result', path: filePath, handle: handle }));\n" +
         "  } catch (e) { try { ws.send(JSON.stringify({ type: 'upload_error', message: e.message })); } catch (_) {} }\n" +
         "}\n" +
         "function handleDownload(ws, msg) {\n" +
@@ -102,6 +119,7 @@ func _backendScriptTemplate(): String {
         "const wss = new WebSocket.Server({ server });\n" +
         "wss.on('connection', (ws) => {\n" +
         "  logEntry({ event: 'NEW CONNECTION' });\n" +
+        "  connHandles.set(ws, {});\n" +
         "  let idleTimer = null;\n" +
         "  const idleTimeoutMs = parseInt(process.env.IDLE_TIMEOUT_MS || '600000', 10);\n" +
         "  function startIdleTimer() {\n" +
@@ -134,6 +152,7 @@ func _backendScriptTemplate(): String {
         "      if (msg.type === 'download') { handleDownload(ws, msg); return; }\n" +
         "      let line = msg.line != null ? String(msg.line).trim() : '';\n" +
         "      line = normalizeWebLine(line);\n" +
+        "      line = substituteHandles(line, connHandles.get(ws) || {});\n" +
         "      if (line.length === 0) return;\n" +
         "      logEntry({ type: 'input', line: line });\n" +
         "      if (line === 'exit') {\n" +

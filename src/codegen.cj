@@ -278,7 +278,11 @@ public func generateDriver(manifest: Manifest): String {
     sb.append("            continue\n")
     sb.append("        }\n")
         sb.append("        if (command == \"help\") {\n")
-    sb.append("            _printHelp()\n")
+    sb.append("            if (argsList.size >= 1 && argsList.get(0).getOrThrow() == \"--json\") {\n")
+    sb.append("                _printHelpJson()\n")
+    sb.append("            } else {\n")
+    sb.append("                _printHelp()\n")
+    sb.append("            }\n")
     sb.append("            continue\n")
     sb.append("        }\n")
     sb.append("        if (command == \"dir\") {\n")
@@ -599,6 +603,44 @@ public func generateDriver(manifest: Manifest): String {
         sb.append("\")\n")
         cmIdx++
     }
+    sb.append("}\n\n")
+
+    // Helper: print help as JSON (for agent schema discovery via `help --json`)
+    sb.append("func _printHelpJson(): Unit {\n")
+    sb.append("    let jSb: StringBuilder = StringBuilder()\n")
+    sb.append("    jSb.append(\"{\\\"commands\\\":[\")\n")
+    var jsonFirst: Bool = true
+    k = 0
+    while (k < keys.size) {
+        let pkgPath2: String = commandPackagePaths.get(k).getOrThrow()
+        let key2: String = keys.get(k).getOrThrow()
+        let overloads2: ArrayList<CommandInfo> = overloadsList.get(k).getOrThrow()
+        let cmd0: CommandInfo = overloads2.get(0).getOrThrow()
+        if (!jsonFirst) { sb.append("    jSb.append(\",\")\n") }
+        jsonFirst = false
+        sb.append("    jSb.append(\"{\\\"name\\\":\\\"")
+        _appendEscapedForHelp(sb, key2)
+        sb.append("\\\",\\\"packagePath\\\":\\\"")
+        _appendEscapedForHelp(sb, pkgPath2)
+        sb.append("\\\",\\\"returnType\\\":\\\"")
+        _appendEscapedForHelp(sb, cmd0.returnType)
+        sb.append("\\\",\\\"params\\\":[\")\n")
+        var pi2: Int64 = 0
+        while (pi2 < cmd0.params.size) {
+            let p2: ParamInfo = cmd0.params.get(pi2).getOrThrow()
+            if (pi2 > 0) { sb.append("    jSb.append(\",\")\n") }
+            sb.append("    jSb.append(\"{\\\"name\\\":\\\"")
+            _appendEscapedForHelp(sb, p2.paramName)
+            sb.append("\\\",\\\"type\\\":\\\"")
+            _appendEscapedForHelp(sb, p2.paramType)
+            sb.append("\\\"}\")\n")
+            pi2++
+        }
+        sb.append("    jSb.append(\"]}\")\n")
+        k++
+    }
+    sb.append("    jSb.append(\"],\\\"builtins\\\":[\\\"echo\\\",\\\"dir\\\",\\\"help\\\",\\\"cd\\\"]}\")\n")
+    sb.append("    _out(jSb.toString())\n")
     sb.append("}\n\n")
 
     // Emit _runKey for each key (tries overloads in order); name is unique per (packagePath, key)
