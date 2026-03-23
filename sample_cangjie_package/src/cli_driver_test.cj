@@ -99,6 +99,13 @@ class RunFromArgsTests {
         @Assert(result.stdout.indexOf("\"name\":\"buildUploadReport\"").isSome())
         @Assert(result.stdout.indexOf("\"name\":\"inputPath\"").isSome())
         @Assert(result.stdout.indexOf("\"packagePath\":\"/\"").isSome())
+        // Task 2 (agent-backend-hardening): verify commandKind and paramRole fields
+        @Assert(result.stdout.indexOf("\"commandKind\":\"function\"").isSome())
+        @Assert(result.stdout.indexOf("\"commandKind\":\"constructor\"").isSome())
+        @Assert(result.stdout.indexOf("\"commandKind\":\"method\"").isSome())
+        @Assert(result.stdout.indexOf("\"role\":\"path\"").isSome())
+        @Assert(result.stdout.indexOf("\"role\":\"ref\"").isSome())
+        @Assert(result.stdout.indexOf("\"className\":\"Student\"").isSome())
     }
 
     @TestCase
@@ -216,5 +223,29 @@ class RunFromArgsTests {
         let r: RunFromArgsResult = runFromArgs(["printLessonStudentNames", "ref:99"], store, 1)
         @Assert(r.exitCode != 0)
         @Assert(r.stderr.size > 0)
+    }
+
+    // Task 1 (agent-backend-hardening): in-process session proof
+    // Proves that object store persists across multiple runFromArgs() calls and that
+    // instance method calls (getName/setName) read and mutate the stored object.
+    @TestCase
+    func sessionStoreAndInstanceMethodsWorkAcrossMultipleCalls() {
+        let store: HashMap<Int64, Any> = HashMap<Int64, Any>()
+        // Step 1: create Student → ref:1 stored in object store
+        let r1: RunFromArgsResult = runFromArgs(["Student", "new", "Alice", "1001"], store, 1)
+        @Assert(r1.exitCode == 0)
+        @Assert(r1.stdout.indexOf("ref:1").isSome())
+        @Assert(r1.nextId == 2)
+        // Step 2: read name via instance method → store must still hold ref:1
+        let r2: RunFromArgsResult = runFromArgs(["Student", "getName", "ref:1"], store, r1.nextId)
+        @Assert(r2.exitCode == 0)
+        @Assert(r2.stdout.indexOf("Alice").isSome())
+        // Step 3: mutate name via instance method
+        let r3: RunFromArgsResult = runFromArgs(["Student", "setName", "ref:1", "Bob"], store, r2.nextId)
+        @Assert(r3.exitCode == 0)
+        // Step 4: re-read name → mutation must be visible through the same store
+        let r4: RunFromArgsResult = runFromArgs(["Student", "getName", "ref:1"], store, r3.nextId)
+        @Assert(r4.exitCode == 0)
+        @Assert(r4.stdout.indexOf("Bob").isSome())
     }
 }
