@@ -12,6 +12,7 @@ import std.process.*
 import std.unittest.*
 import std.unittest.testmacro.*
 import std.env.*
+import std.fs.*
 
 func _getCliDriverPath(): Option<String> {
     match (getVariable("CLI_DRIVER_EXE")) {
@@ -87,6 +88,39 @@ class RunFromArgsTests {
         @Assert(result.stdout.indexOf("Student").isSome())
         @Assert(result.stdout.indexOf("Lesson").isSome())
         @Assert(result.stdout.indexOf(" new ").isSome())
+    }
+
+    @TestCase
+    func helpJsonIncludesCommandListAndFileProcessorSchema() {
+        let store: HashMap<Int64, Any> = HashMap<Int64, Any>()
+        let result: RunFromArgsResult = runFromArgs(["help", "--json"], store, 1)
+        @Assert(result.exitCode == 0)
+        @Assert(result.stdout.indexOf("\"commands\":[").isSome())
+        @Assert(result.stdout.indexOf("\"name\":\"buildUploadReport\"").isSome())
+        @Assert(result.stdout.indexOf("\"name\":\"inputPath\"").isSome())
+        @Assert(result.stdout.indexOf("\"packagePath\":\"/\"").isSome())
+    }
+
+    @TestCase
+    func buildUploadReportCreatesDownloadableFileUnderTmpCliver() {
+        let store: HashMap<Int64, Any> = HashMap<Int64, Any>()
+        let inputDir: String = "/tmp/cliver/uploads"
+        try { Directory.create(inputDir, recursive: true) } catch (_) { }
+        let inputPath: String = inputDir + "/demo-upload.txt"
+        var inputFile: File = File(Path(inputPath), Write)
+        inputFile.write("alpha\nbeta\ngamma\n".toArray())
+        inputFile.close()
+
+        let result: RunFromArgsResult = runFromArgs(["buildUploadReport", inputPath], store, 1)
+        @Assert(result.exitCode == 0)
+        @Assert(result.stdout.indexOf("/tmp/cliver/outputs/demo-upload.txt.report.txt").isSome())
+
+        let reportBytes: Array<Byte> = File.readFrom(Path("/tmp/cliver/outputs/demo-upload.txt.report.txt"))
+        let report: String = String.fromUtf8(reportBytes)
+        @Assert(report.indexOf("INPUT_PATH=/tmp/cliver/uploads/demo-upload.txt").isSome())
+        @Assert(report.indexOf("LINE_COUNT=3").isSome())
+        @Assert(report.indexOf("CHAR_COUNT=17").isSome())
+        @Assert(report.indexOf("UPPERCASE_PREVIEW=ALPHA").isSome())
     }
 
     @TestCase

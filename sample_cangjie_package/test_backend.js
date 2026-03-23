@@ -37,6 +37,7 @@ function runTests(port) {
     }
 
     let uploadedPath = null;
+    let generatedPath = null;
 
     const tests = [
       {
@@ -127,12 +128,26 @@ function runTests(port) {
         },
       },
       {
-        name: 'download uploaded file round-trip (base64 decode matches original)',
-        getMsg: () => ({ type: 'download', path: uploadedPath }),
+        name: 'uploaded file path can be passed into cliver-generated package command to produce /tmp/cliver output',
+        getMsg: () => ({ line: `buildUploadReport ${uploadedPath}` }),
+        check: (stdout, stderr, j) => {
+          if (stderr && stderr.includes('Unknown')) return false;
+          if (!stdout || !stdout.includes('/tmp/cliver/outputs/')) return false;
+          const match = stdout.match(/\/tmp\/cliver\/outputs\/[^\s]+\.report\.txt/);
+          if (!match) return false;
+          generatedPath = match[0];
+          return generatedPath.endsWith('.report.txt');
+        },
+      },
+      {
+        name: 'download generated report round-trip (base64 decode shows processed content)',
+        getMsg: () => ({ type: 'download', path: generatedPath }),
         check: (stdout, stderr, j) => {
           if (!j || j.type !== 'download_result' || !j.data) return false;
           const decoded = Buffer.from(j.data, 'base64').toString();
-          return decoded === 'name,score\nAlice,100';
+          return decoded.includes('INPUT_PATH=')
+            && decoded.includes('LINE_COUNT=2')
+            && decoded.includes('UPPERCASE_PREVIEW=NAME,SCORE');
         },
       },
       {
