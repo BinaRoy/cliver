@@ -44,4 +44,66 @@ class CodegenTests {
         @Assert(out.indexOf("EmptyPkg").isSome())
         @Assert(out.indexOf("Commands:").isSome())
     }
+
+    @TestCase
+    func returnRoleRefForConstructor() {
+        @Assert(_returnRoleStr("init", "Foo", true) == "ref")
+    }
+
+    @TestCase
+    func returnRoleVoidForUnit() {
+        @Assert(_returnRoleStr("doSomething", "Unit", false) == "void")
+    }
+
+    @TestCase
+    func returnRolePathForFuncNameWithFile() {
+        @Assert(_returnRoleStr("getFilePath", "String", false) == "path")
+    }
+
+    @TestCase
+    func returnRolePathForFuncNameWithDir() {
+        @Assert(_returnRoleStr("getDir", "String", false) == "path")
+    }
+
+    @TestCase
+    func returnRolePlainForGenericString() {
+        @Assert(_returnRoleStr("foo", "String", false) == "plain")
+    }
+
+    @TestCase
+    func returnRolePlainForNonStringWithPathName() {
+        @Assert(_returnRoleStr("getDir", "Int64", false) == "plain")
+    }
+
+    @TestCase
+    func returnRoleRefOverridesPathKeyword() {
+        @Assert(_returnRoleStr("getFilePath", "FilePath", true) == "ref")
+    }
+
+    @TestCase
+    func returnRolePlainForInputKeyword() {
+        @Assert(_returnRoleStr("getInputCount", "String", false) == "plain")
+    }
+
+    @TestCase
+    func returnRolePathForOutputPath() {
+        @Assert(_returnRoleStr("getOutputPath", "String", false) == "path")
+    }
+
+    @TestCase
+    func returnRoleSubstringMatchIndirect() {
+        @Assert(_returnRoleStr("indirect", "String", false) == "path")
+    }
+
+    @TestCase
+    func returnRoleCaseInsensitive() {
+        @Assert(_returnRoleStr("GetDIR", "String", false) == "path")
+    }
+
+    @TestCase
+    func generateDriverHelpJsonContainsReturnRole() {
+        let m: Manifest = _makeMinimalManifest()
+        let out: String = generateDriver(m)
+        @Assert(out.indexOf("returnRole").isSome())
+    }
 }
