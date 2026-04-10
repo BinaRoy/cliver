@@ -295,7 +295,7 @@ public func generateDriver(manifest: Manifest): String {
     sb.append("            }\n")
     sb.append("            continue\n")
     sb.append("        }\n")
-        sb.append("        if (command == \"help\") {\n")
+    sb.append("        if (command == \"help\") {\n")
     sb.append("            if (argsList.size >= 1 && argsList.get(0).getOrThrow() == \"--json\") {\n")
     sb.append("                _printHelpJson()\n")
     sb.append("            } else {\n")
@@ -338,7 +338,7 @@ public func generateDriver(manifest: Manifest): String {
             sb.append("            while (ia < argsList.size) { instArgs.add(all: [argsList.get(ia).getOrThrow()]); ia++ }\n")
         } else {
             sb.append("            var instArgs: ArrayList<String> = ArrayList<String>()\n")
-            sb.append("            var ia: Int64 = 2\n")
+            sb.append("            var ia: Int64 = 1\n")
             sb.append("            while (ia < argsList.size) { instArgs.add(all: [argsList.get(ia).getOrThrow()]); ia++ }\n")
         }
         sb.append("            let _code = _run")

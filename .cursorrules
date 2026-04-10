@@ -8,3 +8,8 @@
 
 <!-- End Cangjie AI for Cursor Prompt Prefix -->
 
+<!-- Feature Development Workflow -->
+7. 开发 feature 时，先读 `dev-journal/AGENT.md` 了解当前状态和流程，按 `dev-journal/process/feature-workflow.md` 执行
+8. 代码约束和架构边界见 `dev-journal/process/constraints.md`
+<!-- End Feature Development Workflow -->
+
