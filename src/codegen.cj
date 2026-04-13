@@ -621,6 +621,8 @@ public func generateDriver(manifest: Manifest): String {
         _appendEscapedForHelp(sb, kindStr)
         sb.append("\\\",\\\"returnType\\\":\\\"")
         _appendEscapedForHelp(sb, cmd0.returnType)
+        sb.append("\\\",\\\"returnRole\\\":\\\"")
+        _appendEscapedForHelp(sb, _returnRoleStr(key2, cmd0.returnType, cmd0.returnIsRef))
         sb.append("\\\",\\\"params\\\":[\")\n")
         var pi2: Int64 = 0
         while (pi2 < cmd0.params.size) {
@@ -661,6 +663,8 @@ public func generateDriver(manifest: Manifest): String {
         _appendEscapedForHelp(sb, cmKind)
         sb.append("\\\",\\\"returnType\\\":\\\"")
         _appendEscapedForHelp(sb, cmCmd0.returnType)
+        sb.append("\\\",\\\"returnRole\\\":\\\"")
+        _appendEscapedForHelp(sb, _returnRoleStr(cmKey2, cmCmd0.returnType, cmCmd0.returnIsRef))
         sb.append("\\\",\\\"params\\\":[\")\n")
         var cmPi2: Int64 = 0
         while (cmPi2 < cmCmd0.params.size) {
@@ -1434,6 +1438,30 @@ func _paramRoleStr(paramName: String, paramType: String, classNamesList: ArrayLi
         if (lower.indexOf("path").isSome() || lower.indexOf("file").isSome() ||
             lower.indexOf("dir").isSome() || lower.indexOf("input").isSome() ||
             lower.indexOf("output").isSome()) {
+            return "path"
+        }
+    }
+    "plain"
+}
+
+// Return the returnRole string for a command (used at code-generation time for help --json).
+// Priority: ref > void > path (String + name/type contains path keyword) > plain.
+func _returnRoleStr(commandName: String, returnType: String, returnIsRef: Bool): String {
+    if (returnIsRef) { return "ref" }
+    if (returnType == "Unit") { return "void" }
+    if (returnType == "String") {
+        let combined: String = commandName + " " + returnType
+        let lsb: StringBuilder = StringBuilder()
+        var li: Int64 = 0
+        while (li < combined.size) {
+            let lc: Int64 = Int64(combined.get(li).getOrThrow())
+            if (lc >= 65 && lc <= 90) { lsb.append(Rune(UInt32(lc + 32))) }
+            else { lsb.append(Rune(UInt32(lc))) }
+            li++
+        }
+        let lower: String = lsb.toString()
+        if (lower.indexOf("path").isSome() || lower.indexOf("file").isSome() ||
+            lower.indexOf("dir").isSome()) {
             return "path"
         }
     }
