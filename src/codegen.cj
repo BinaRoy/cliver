@@ -32,6 +32,7 @@ public func generateDriver(manifest: Manifest): String {
     sb.append("import std.collection.*\n")
     sb.append("import std.convert.*\n")
     sb.append("import std.core.StringBuilder\n")
+    sb.append("import stdx.encoding.json.*\n")
     var parentImports: ArrayList<String> = _collectParentSubpackageImports(manifest, pkg)
     var pi: Int64 = 0
     while (pi < parentImports.size) {
@@ -294,7 +295,7 @@ public func generateDriver(manifest: Manifest): String {
     sb.append("            }\n")
     sb.append("            continue\n")
     sb.append("        }\n")
-        sb.append("        if (command == \"help\") {\n")
+    sb.append("        if (command == \"help\") {\n")
     sb.append("            if (argsList.size >= 1 && argsList.get(0).getOrThrow() == \"--json\") {\n")
     sb.append("                _printHelpJson()\n")
     sb.append("            } else {\n")
@@ -337,7 +338,7 @@ public func generateDriver(manifest: Manifest): String {
             sb.append("            while (ia < argsList.size) { instArgs.add(all: [argsList.get(ia).getOrThrow()]); ia++ }\n")
         } else {
             sb.append("            var instArgs: ArrayList<String> = ArrayList<String>()\n")
-            sb.append("            var ia: Int64 = 2\n")
+            sb.append("            var ia: Int64 = 1\n")
             sb.append("            while (ia < argsList.size) { instArgs.add(all: [argsList.get(ia).getOrThrow()]); ia++ }\n")
         }
         sb.append("            let _code = _run")
@@ -601,9 +602,9 @@ public func generateDriver(manifest: Manifest): String {
 
     // Helper: print help as JSON with commandKind + paramRole for agent schema discovery
     sb.append("func _printHelpJson(): Unit {\n")
-    sb.append("    let jSb: StringBuilder = StringBuilder()\n")
-    sb.append("    jSb.append(\"{\\\"commands\\\":[\")\n")
-    var jsonFirst: Bool = true
+    sb.append("    let _jRoot: JsonObject = JsonObject()\n")
+    sb.append("    let _jCmds: JsonArray = JsonArray()\n")
+    var jIdx: Int64 = 0
     k = 0
     while (k < keys.size) {
         let pkgPath2: String = commandPackagePaths.get(k).getOrThrow()
@@ -611,35 +612,48 @@ public func generateDriver(manifest: Manifest): String {
         let overloads2: ArrayList<CommandInfo> = overloadsList.get(k).getOrThrow()
         let cmd0: CommandInfo = overloads2.get(0).getOrThrow()
         let kindStr: String = _commandKindStr(cmd0)
-        if (!jsonFirst) { sb.append("    jSb.append(\",\")\n") }
-        jsonFirst = false
-        sb.append("    jSb.append(\"{\\\"name\\\":\\\"")
+        let roleStr2: String = _returnRoleStr(key2, cmd0.returnType, cmd0.returnIsRef)
+        let objVar: String = "_jC" + jIdx.toString()
+        let paramsVar: String = "_jP" + jIdx.toString()
+        sb.append("    let " + objVar + ": JsonObject = JsonObject()\n")
+        sb.append("    " + objVar + ".put(\"name\", JsonString(\"")
         _appendEscapedForHelp(sb, key2)
-        sb.append("\\\",\\\"packagePath\\\":\\\"")
+        sb.append("\"))\n")
+        sb.append("    " + objVar + ".put(\"packagePath\", JsonString(\"")
         _appendEscapedForHelp(sb, pkgPath2)
-        sb.append("\\\",\\\"commandKind\\\":\\\"")
+        sb.append("\"))\n")
+        sb.append("    " + objVar + ".put(\"commandKind\", JsonString(\"")
         _appendEscapedForHelp(sb, kindStr)
-        sb.append("\\\",\\\"returnType\\\":\\\"")
+        sb.append("\"))\n")
+        sb.append("    " + objVar + ".put(\"returnType\", JsonString(\"")
         _appendEscapedForHelp(sb, cmd0.returnType)
-        sb.append("\\\",\\\"returnRole\\\":\\\"")
-        _appendEscapedForHelp(sb, _returnRoleStr(key2, cmd0.returnType, cmd0.returnIsRef))
-        sb.append("\\\",\\\"params\\\":[\")\n")
+        sb.append("\"))\n")
+        sb.append("    " + objVar + ".put(\"returnRole\", JsonString(\"")
+        _appendEscapedForHelp(sb, roleStr2)
+        sb.append("\"))\n")
+        sb.append("    let " + paramsVar + ": JsonArray = JsonArray()\n")
         var pi2: Int64 = 0
         while (pi2 < cmd0.params.size) {
             let p2: ParamInfo = cmd0.params.get(pi2).getOrThrow()
             let roleStr: String = _paramRoleStr(p2.paramName, p2.paramType, classNamesList)
-            if (pi2 > 0) { sb.append("    jSb.append(\",\")\n") }
-            sb.append("    jSb.append(\"{\\\"name\\\":\\\"")
+            let pVar: String = "_jPO" + jIdx.toString() + "_" + pi2.toString()
+            sb.append("    let " + pVar + ": JsonObject = JsonObject()\n")
+            sb.append("    " + pVar + ".put(\"name\", JsonString(\"")
             _appendEscapedForHelp(sb, p2.paramName)
-            sb.append("\\\",\\\"type\\\":\\\"")
+            sb.append("\"))\n")
+            sb.append("    " + pVar + ".put(\"type\", JsonString(\"")
             _appendEscapedForHelp(sb, p2.paramType)
-            sb.append("\\\",\\\"role\\\":\\\"")
+            sb.append("\"))\n")
+            sb.append("    " + pVar + ".put(\"role\", JsonString(\"")
             _appendEscapedForHelp(sb, roleStr)
-            sb.append("\\\"}\")\n")
+            sb.append("\"))\n")
+            sb.append("    " + paramsVar + ".add(" + pVar + ")\n")
             pi2++
         }
-        sb.append("    jSb.append(\"]}\")\n")
+        sb.append("    " + objVar + ".put(\"params\", " + paramsVar + ")\n")
+        sb.append("    _jCmds.add(" + objVar + ")\n")
         k++
+        jIdx++
     }
     // Emit class methods (method / staticMethod) with className field
     var cmJsonIdx: Int64 = 0
@@ -651,40 +665,60 @@ public func generateDriver(manifest: Manifest): String {
         let cmKind: String = _commandKindStr(cmCmd0)
         let cmPkg2: String = cmPackagePaths.get(cmJsonIdx).getOrThrow()
         let cmKey2: String = cmClass2 + " " + cmMethod2
-        if (!jsonFirst) { sb.append("    jSb.append(\",\")\n") }
-        jsonFirst = false
-        sb.append("    jSb.append(\"{\\\"name\\\":\\\"")
+        let cmRoleStr: String = _returnRoleStr(cmKey2, cmCmd0.returnType, cmCmd0.returnIsRef)
+        let objVar: String = "_jC" + jIdx.toString()
+        let paramsVar: String = "_jP" + jIdx.toString()
+        sb.append("    let " + objVar + ": JsonObject = JsonObject()\n")
+        sb.append("    " + objVar + ".put(\"name\", JsonString(\"")
         _appendEscapedForHelp(sb, cmKey2)
-        sb.append("\\\",\\\"packagePath\\\":\\\"")
+        sb.append("\"))\n")
+        sb.append("    " + objVar + ".put(\"packagePath\", JsonString(\"")
         _appendEscapedForHelp(sb, cmPkg2)
-        sb.append("\\\",\\\"className\\\":\\\"")
+        sb.append("\"))\n")
+        sb.append("    " + objVar + ".put(\"className\", JsonString(\"")
         _appendEscapedForHelp(sb, cmClass2)
-        sb.append("\\\",\\\"commandKind\\\":\\\"")
+        sb.append("\"))\n")
+        sb.append("    " + objVar + ".put(\"commandKind\", JsonString(\"")
         _appendEscapedForHelp(sb, cmKind)
-        sb.append("\\\",\\\"returnType\\\":\\\"")
+        sb.append("\"))\n")
+        sb.append("    " + objVar + ".put(\"returnType\", JsonString(\"")
         _appendEscapedForHelp(sb, cmCmd0.returnType)
-        sb.append("\\\",\\\"returnRole\\\":\\\"")
-        _appendEscapedForHelp(sb, _returnRoleStr(cmKey2, cmCmd0.returnType, cmCmd0.returnIsRef))
-        sb.append("\\\",\\\"params\\\":[\")\n")
+        sb.append("\"))\n")
+        sb.append("    " + objVar + ".put(\"returnRole\", JsonString(\"")
+        _appendEscapedForHelp(sb, cmRoleStr)
+        sb.append("\"))\n")
+        sb.append("    let " + paramsVar + ": JsonArray = JsonArray()\n")
         var cmPi2: Int64 = 0
         while (cmPi2 < cmCmd0.params.size) {
             let cmP2: ParamInfo = cmCmd0.params.get(cmPi2).getOrThrow()
             let cmRole2: String = _paramRoleStr(cmP2.paramName, cmP2.paramType, classNamesList)
-            if (cmPi2 > 0) { sb.append("    jSb.append(\",\")\n") }
-            sb.append("    jSb.append(\"{\\\"name\\\":\\\"")
+            let pVar: String = "_jPO" + jIdx.toString() + "_" + cmPi2.toString()
+            sb.append("    let " + pVar + ": JsonObject = JsonObject()\n")
+            sb.append("    " + pVar + ".put(\"name\", JsonString(\"")
             _appendEscapedForHelp(sb, cmP2.paramName)
-            sb.append("\\\",\\\"type\\\":\\\"")
+            sb.append("\"))\n")
+            sb.append("    " + pVar + ".put(\"type\", JsonString(\"")
             _appendEscapedForHelp(sb, cmP2.paramType)
-            sb.append("\\\",\\\"role\\\":\\\"")
+            sb.append("\"))\n")
+            sb.append("    " + pVar + ".put(\"role\", JsonString(\"")
             _appendEscapedForHelp(sb, cmRole2)
-            sb.append("\\\"}\")\n")
+            sb.append("\"))\n")
+            sb.append("    " + paramsVar + ".add(" + pVar + ")\n")
             cmPi2++
         }
-        sb.append("    jSb.append(\"]}\")\n")
+        sb.append("    " + objVar + ".put(\"params\", " + paramsVar + ")\n")
+        sb.append("    _jCmds.add(" + objVar + ")\n")
         cmJsonIdx++
+        jIdx++
     }
-    sb.append("    jSb.append(\"],\\\"builtins\\\":[\\\"echo\\\",\\\"dir\\\",\\\"help\\\",\\\"cd\\\"]}\")\n")
-    sb.append("    _out(jSb.toString())\n")
+    sb.append("    _jRoot.put(\"commands\", _jCmds)\n")
+    sb.append("    let _jBuiltins: JsonArray = JsonArray()\n")
+    sb.append("    _jBuiltins.add(JsonString(\"echo\"))\n")
+    sb.append("    _jBuiltins.add(JsonString(\"dir\"))\n")
+    sb.append("    _jBuiltins.add(JsonString(\"help\"))\n")
+    sb.append("    _jBuiltins.add(JsonString(\"cd\"))\n")
+    sb.append("    _jRoot.put(\"builtins\", _jBuiltins)\n")
+    sb.append("    _out(_jRoot.toString())\n")
     sb.append("}\n\n")
 
     // Emit _runKey for each key (tries overloads in order); name is unique per (packagePath, key)
